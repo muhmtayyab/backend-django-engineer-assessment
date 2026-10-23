@@ -10,10 +10,9 @@
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script>
 const map = L.map('map');
-// CARTO tiles: OSM's public tile server blocks requests that carry no Referer (Django's default policy strips it).
-L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', {
-  attribution: '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors © <a href="https://carto.com/attributions">CARTO</a>',
-  subdomains: 'abcd', maxZoom: 19,
+// Esri World Street Map: free, no API key. (OSM's public tile server blocks app traffic; CARTO's raster URL needs a key.)
+L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}', {
+  attribution: 'Tiles © Esri — Source: Esri, HERE, Garmin, OpenStreetMap contributors', maxZoom: 18,
 }).addTo(map);
 fetch('/api/route/' + location.search).then(r => r.json()).then(d => {
   const info = document.getElementById('info');
