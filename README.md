@@ -19,7 +19,6 @@
 - **Corridor search**: the route is resampled every 2 miles; stations within 10 miles of it get a mile marker.
 - **Planner**: greedy "nearest cheaper station in range" – buys only enough fuel to reach a cheaper stop,
   otherwise fills up and heads to the cheapest reachable stop. Optimal for this problem; runs in milliseconds.
-- **Small fill-ups**: purchases under 2 gallons are folded into the previous stop when its tank has room.
 - **Resilience**: OSRM is called with a 15 s timeout and one retry; failures return a clear JSON error.
 - **Assumptions**: tank starts full (free); cost = fuel bought en route (`fuel_consumed_gallons` is also
   returned). Station positions are city-level, so mile markers/offsets are approximate.
@@ -39,7 +38,7 @@ Alaska, Hawaii and Puerto Rico are accepted as places; routing between disconnec
 - Station coordinates are city centroids (the CSV has no lat/lng), so mile markers and "distance from route" are approximate.
 - The corridor uses straight-line distance (10 miles) from the route, not the real detour.
 - The vehicle starts with a full tank that is not charged; cost covers fuel bought en route only.
-- A few sub-2-gallon fill-ups remain where the previous tank was already full.
+- Some fill-ups are small (a few gallons): buying just enough to reach a cheaper station is the cheapest plan, so they are kept.
 - Canadian stations in the CSV are ignored.
 
 ## Production notes

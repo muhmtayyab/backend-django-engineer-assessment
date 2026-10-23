@@ -144,5 +144,4 @@ NOMINATIM_URL = "https://nominatim.openstreetmap.org/search"
 HTTP_USER_AGENT = "fuel-route-planner/1.0 (assessment project)"
 VEHICLE_RANGE_MILES = 500
 VEHICLE_MPG = 10
-MIN_PURCHASE_GALLONS = 2  # smaller fill-ups are merged into the previous stop
 STATION_CORRIDOR_MILES = 10  # max distance of a fuel stop from the route

@@ -177,11 +177,12 @@ def stations_along(coords, total_miles):
 # ---------- planner ----------
 
 def plan_fuel(stops, total_miles):
-    """Cheapest refuelling plan. Tank starts full; buy only what is needed.
+    """Cheapest refuelling plan. Tank starts full (free); buy only what is needed.
 
-    Greedy "nearest cheaper station in range" (optimal for the gas-station problem):
-    at each stop buy just enough to reach a cheaper stop, else fill up and go to the
-    cheapest stop reachable on a full tank. The destination acts as a free stop.
+    This is the "fixed-path gas station problem" (Khuller, Malekian & Mestre, "To Fill or not
+    to Fill: The Gas Station Problem", sec. 2.4): at each stop buy just enough to reach a cheaper
+    stop in range, else fill up and go to the cheapest stop reachable on a full tank. The
+    destination acts as a free stop. Verified against an exact DP in tests/test_planner.py.
     Returns [{"stop": (Station, mile, offset), "miles": range_bought_in_miles}].
     """
     rng = settings.VEHICLE_RANGE_MILES
@@ -202,7 +203,7 @@ def plan_fuel(stops, total_miles):
             cheaper = next((n for n in reach if n[0].price < cur[0].price), None)
             if cheaper is None and total_miles - pos <= rng + 1e-9:
                 plan[-1]["miles"] += max(0.0, total_miles - pos - fuel)
-                return _merge_small_purchases(plan)
+                return plan
             if cheaper:
                 target, buy = cheaper, max(0.0, cheaper[1] - pos - fuel)
             elif reach:
@@ -213,29 +214,3 @@ def plan_fuel(stops, total_miles):
         fuel += buy - (target[1] - pos)
         pos, cur = target[1], target
         plan.append({"stop": target, "miles": 0.0})
-
-
-def _merge_small_purchases(plan):
-    """Fold fill-ups under MIN_PURCHASE_GALLONS into the previous stop when its tank has room.
-
-    Dropping stop i and buying its miles one stop earlier keeps total fuel unchanged, so the
-    plan stays feasible as long as the earlier tank does not exceed the vehicle range.
-    """
-    rng = settings.VEHICLE_RANGE_MILES
-    min_miles = settings.MIN_PURCHASE_GALLONS * settings.VEHICLE_MPG
-    i = 1
-    while i < len(plan):
-        buy = plan[i]["miles"]
-        if 0 < buy < min_miles:
-            # Tank level right after buying at the previous stop.
-            fuel = float(rng)
-            pos = 0.0
-            for p in plan[:i]:
-                fuel += p["miles"] - (p["stop"][1] - pos)
-                pos = p["stop"][1]
-            if fuel + buy <= rng + 1e-9:
-                plan[i - 1]["miles"] += buy
-                del plan[i]
-                continue
-        i += 1
-    return plan
