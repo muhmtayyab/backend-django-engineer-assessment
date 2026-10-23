@@ -1,3 +1,5 @@
+import hashlib
+
 import numpy as np
 from django.conf import settings
 from django.core.cache import cache
@@ -70,7 +72,7 @@ class RoutePlanView(APIView):
         start, finish = request.query_params.get("start"), request.query_params.get("finish")
         if not start or not finish:
             return Response({"error": "Both 'start' and 'finish' query parameters are required."}, status=400)
-        key = f"plan:{start.strip().lower()}|{finish.strip().lower()}"
+        key = "plan:" + hashlib.md5(f"{start.strip().lower()}|{finish.strip().lower()}".encode()).hexdigest()
         data = cache.get(key)
         if data is None:
             try:
