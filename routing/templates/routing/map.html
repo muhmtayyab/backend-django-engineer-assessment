@@ -1,0 +1,28 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>Fuel route</title>
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<style>
+ html,body{height:100%;margin:0;font:14px system-ui,sans-serif}
+ #map{height:100%} #info{position:absolute;z-index:1000;top:10px;right:10px;background:#fff;padding:10px 14px;border-radius:6px;box-shadow:0 1px 6px #0004;max-width:280px}
+</style></head><body>
+<div id="map"></div><div id="info">Loading…</div>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+const map = L.map('map');
+L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {attribution: '© OpenStreetMap'}).addTo(map);
+fetch('/api/route/' + location.search).then(r => r.json()).then(d => {
+  const info = document.getElementById('info');
+  if (d.error) { info.textContent = d.error; return; }
+  const line = L.geoJSON(d.route, {style: {color: '#2563eb', weight: 4}}).addTo(map);
+  map.fitBounds(line.getBounds());
+  L.marker([d.start.lat, d.start.lng]).addTo(map).bindPopup('Start');
+  L.marker([d.finish.lat, d.finish.lng]).addTo(map).bindPopup('Finish');
+  d.fuel_stops.forEach((s, i) => L.circleMarker([s.location.lat, s.location.lng],
+    {radius: 8, color: '#dc2626', fillOpacity: .8}).addTo(map).bindPopup(
+    `<b>${i + 1}. ${s.name}</b><br>${s.city}, ${s.state}<br>Mile ${s.mile_marker}<br>` +
+    `$${s.price_per_gallon}/gal · ${s.gallons_purchased} gal = $${s.cost}`));
+  info.innerHTML = `<b>${d.distance_miles} mi</b><br>${d.fuel_stops.length} fuel stop(s)<br>` +
+    `Total fuel cost: <b>$${d.total_fuel_cost}</b>`;
+});
+</script></body></html>
