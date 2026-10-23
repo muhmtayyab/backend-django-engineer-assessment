@@ -138,6 +138,8 @@ CACHES = {"default": {"BACKEND": "django.core.cache.backends.locmem.LocMemCache"
 
 # Routing / planning
 OSRM_URL = "https://router.project-osrm.org/route/v1/driving"
+OSRM_TIMEOUT = 15  # seconds per attempt
+OSRM_RETRIES = 1
 NOMINATIM_URL = "https://nominatim.openstreetmap.org/search"
 HTTP_USER_AGENT = "fuel-route-planner/1.0 (assessment project)"
 VEHICLE_RANGE_MILES = 500

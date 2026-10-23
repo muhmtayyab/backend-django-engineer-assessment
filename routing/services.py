@@ -93,11 +93,19 @@ def fetch_route(a, b):
     if hit:
         return hit
     url = f"{settings.OSRM_URL}/{a[1]},{a[0]};{b[1]},{b[0]}"
-    try:
-        r = requests.get(url, params={"overview": "full", "geometries": "geojson"}, timeout=20)
-        data = r.json()
-    except (requests.RequestException, ValueError) as e:
-        raise PlanError(f"Routing service unavailable: {e}", 502)
+    data, error = None, None
+    for _ in range(1 + settings.OSRM_RETRIES):
+        try:
+            r = requests.get(url, params={"overview": "full", "geometries": "geojson"},
+                             timeout=settings.OSRM_TIMEOUT)
+            if r.status_code >= 500:
+                raise requests.RequestException(f"HTTP {r.status_code}")
+            data = r.json()
+            break
+        except (requests.RequestException, ValueError) as e:
+            error = e
+    if data is None:
+        raise PlanError(f"Routing service unavailable: {error}", 502)
     if data.get("code") != "Ok":
         raise PlanError(f"No drivable route found ({data.get('code')}).", 422)
     route = data["routes"][0]
