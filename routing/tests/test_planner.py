@@ -2,7 +2,7 @@ from types import SimpleNamespace as NS
 
 from django.test import SimpleTestCase
 
-from .services import PlanError, plan_fuel
+from routing.services import PlanError, plan_fuel
 
 
 def st(price):

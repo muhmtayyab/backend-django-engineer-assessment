@@ -1,6 +1,7 @@
 """Geocoding, routing (one OSRM call) and the fuel-stop planner."""
 import hashlib
 import re
+import threading
 
 import numpy as np
 import requests
@@ -90,18 +91,30 @@ def fetch_route(a, b):
 # ---------- stations ----------
 
 _stations = None
+_stations_lock = threading.Lock()
 
 
 def _station_arrays():
+    """Station rows + lat/lng arrays, loaded once. An empty table is never cached."""
     global _stations
-    if _stations is None:
+    with _stations_lock:
+        if _stations is not None:
+            return _stations
         rows = list(Station.objects.all())
-        _stations = (
+        arrays = (
             rows,
             np.array([s.lat for s in rows]),
             np.array([s.lng for s in rows]),
         )
-    return _stations
+        if rows:
+            _stations = arrays
+        return arrays
+
+
+def reset_station_cache():
+    global _stations
+    with _stations_lock:
+        _stations = None
 
 
 def stations_along(coords, total_miles):
