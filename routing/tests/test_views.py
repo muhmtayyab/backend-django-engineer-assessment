@@ -15,13 +15,20 @@ TRIP_MILES = 1200.0
 END_LNG = START_LNG + TRIP_MILES / MILES_PER_LNG
 LINE = np.array([[START_LNG, LAT], [END_LNG, LAT]])
 START, FINISH = f"{LAT},{START_LNG}", f"{LAT},{END_LNG}"
+ALT_LAT = 41.0  # a second corridor 69 miles north: far enough that stations never match both
+ALT_LINE = np.array([[START_LNG, ALT_LAT], [END_LNG, ALT_LAT]])
+ALT_MILES = 1210.0
 
 
-def station(sid, mile, price, off_miles=0.0):
+def station(sid, mile, price, off_miles=0.0, lat=LAT):
     return Station.objects.create(
         truckstop_id=sid, name=f"Stop {sid}", address="addr", city="City", state="NV", price=price,
-        lat=LAT + off_miles / 69.0, lng=START_LNG + mile / MILES_PER_LNG,
+        lat=lat + off_miles / 69.0, lng=START_LNG + mile / MILES_PER_LNG,
     )
+
+
+def route(line=LINE, miles=TRIP_MILES, hours=20.0):
+    return services.Route(coords=line, miles=miles, hours=hours)
 
 
 class RouteTestCase(TestCase):
@@ -30,7 +37,7 @@ class RouteTestCase(TestCase):
         services.reset_station_cache()
         self.addCleanup(cache.clear)
         self.addCleanup(services.reset_station_cache)
-        patcher = mock.patch("routing.services.fetch_route", return_value=(LINE, TRIP_MILES))
+        patcher = mock.patch("routing.services.fetch_routes", return_value=[route()])
         self.fetch = patcher.start()
         self.addCleanup(patcher.stop)
 
@@ -55,9 +62,12 @@ class RoutePlanViewTests(RouteTestCase):
         self.assertTrue(d["fuel_stops"])
         self.assertAlmostEqual(d["total_fuel_cost"], sum(s["cost"] for s in d["fuel_stops"]), delta=0.05)
         self.assertEqual(d["route"]["geometry"]["type"], "LineString")
+        self.assertEqual(d["duration_hours"], 20.0)
+        self.assertEqual(len(d["route_options"]), 1)
+        self.assertTrue(d["route_options"][0]["selected"])
 
     def test_short_trip_has_no_stops_and_zero_cost(self):
-        self.fetch.return_value = (LINE, 300.0)
+        self.fetch.return_value = [route(miles=300.0)]
         d = self.get(start=START, finish=FINISH).json()
         self.assertEqual(d["fuel_stops"], [])
         self.assertEqual(d["total_fuel_cost"], 0)
@@ -76,6 +86,58 @@ class RoutePlanViewTests(RouteTestCase):
         self.get(start=START, finish=FINISH)
         self.get(start=START, finish=FINISH)
         self.assertEqual(self.fetch.call_count, 1)
+
+
+class RouteComparisonTests(RouteTestCase):
+    """OSRM returns alternatives in one call; we keep the route with the cheapest fuel plan."""
+
+    def stock(self, lat, price, first_id):
+        for i, mile in enumerate((300, 700, 1000)):
+            station(first_id + i, mile, price, lat=lat)
+
+    def test_picks_the_route_with_cheaper_fuel_even_if_longer(self):
+        self.stock(LAT, 3.50, 1)
+        self.stock(ALT_LAT, 3.00, 10)
+        self.fetch.return_value = [route(), route(ALT_LINE, ALT_MILES, 21.0)]
+        d = self.get(start=START, finish=FINISH).json()
+        self.assertEqual(d["distance_miles"], ALT_MILES)
+        self.assertEqual(d["duration_hours"], 21.0)
+        self.assertEqual([o["selected"] for o in d["route_options"]], [False, True])
+        costs = [o["total_fuel_cost"] for o in d["route_options"]]
+        self.assertLess(costs[1], costs[0])
+        self.assertEqual(d["total_fuel_cost"], costs[1])
+        self.assertTrue(all(abs(s["location"]["lat"] - ALT_LAT) < 0.5 for s in d["fuel_stops"]))
+
+    def test_keeps_the_first_route_when_it_is_cheaper(self):
+        self.stock(LAT, 3.00, 1)
+        self.stock(ALT_LAT, 3.50, 10)
+        self.fetch.return_value = [route(), route(ALT_LINE, ALT_MILES)]
+        d = self.get(start=START, finish=FINISH).json()
+        self.assertEqual(d["distance_miles"], TRIP_MILES)
+        self.assertEqual([o["selected"] for o in d["route_options"]], [True, False])
+
+    def test_skips_a_route_with_no_feasible_plan(self):
+        self.stock(ALT_LAT, 3.00, 10)  # first route has no stations at all
+        self.fetch.return_value = [route(), route(ALT_LINE, ALT_MILES)]
+        r = self.get(start=START, finish=FINISH)
+        self.assertEqual(r.status_code, 200)
+        d = r.json()
+        self.assertEqual(d["distance_miles"], ALT_MILES)
+        self.assertIn("error", d["route_options"][0])
+        self.assertTrue(d["route_options"][1]["selected"])
+
+    def test_all_routes_infeasible_is_422(self):
+        self.fetch.return_value = [route(), route(ALT_LINE, ALT_MILES)]
+        r = self.get(start=START, finish=FINISH)
+        self.assertEqual(r.status_code, 422)
+        self.assertIn("error", r.json())
+
+    def test_equal_cost_prefers_the_shorter_route(self):
+        self.stock(LAT, 3.00, 1)
+        self.stock(ALT_LAT, 3.00, 10)
+        self.fetch.return_value = [route(ALT_LINE, ALT_MILES), route(miles=1190.0)]
+        d = self.get(start=START, finish=FINISH).json()
+        self.assertEqual(d["distance_miles"], 1190.0)
 
 
 class NoStationsTests(RouteTestCase):

@@ -27,7 +27,7 @@ class GeocodeTests(SimpleTestCase):
 
 class SamePlaceTests(SimpleTestCase):
     def test_identical_start_finish_rejected_before_routing(self):
-        with mock.patch("routing.views.services.fetch_route") as fetch:
+        with mock.patch("routing.views.services.fetch_routes") as fetch:
             with self.assertRaises(PlanError) as cm:
                 build_plan("Dallas, TX", "Dallas, TX")
         self.assertEqual(cm.exception.status, 400)

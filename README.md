@@ -16,9 +16,13 @@
   back to Nominatim (one extra call each, cached). Routes and plans are cached.
 - **Stations**: the CSV is deduplicated (lowest price per truckstop ID), Canadian stops dropped, and each stop
   placed at its city centroid (`load_stations`). Held in memory as numpy arrays.
+- **Route choice**: the same OSRM call (`alternatives=true`) returns the best route plus usually one alternative.
+  Each is planned separately (about 20 ms each) and the route with the **lowest total fuel cost** is returned;
+  ties go to the shorter route. `route_options` lists every route's distance, duration, cost and whether it was
+  selected, so the cost/time trade-off is visible. A route with no feasible plan is skipped (422 only if all fail).
 - **Corridor search**: the route is resampled every 2 miles; stations within 10 miles of it get a mile marker.
-- **Planner**: greedy "nearest cheaper station in range" – buys only enough fuel to reach a cheaper stop,
-  otherwise fills up and heads to the cheapest reachable stop. Optimal for this problem; runs in milliseconds.
+- **Planner** (the fixed-path gas station problem, Khuller, Malekian & Mestre): greedy "nearest cheaper station in range" – buys only enough fuel to reach a cheaper stop,
+  otherwise fills up and heads to the cheapest reachable stop. Tested against an exact DP solver on random trips; runs in milliseconds.
 - **Resilience**: OSRM is called with a 15 s timeout and one retry; failures return a clear JSON error.
 - **Assumptions**: tank starts full (free); cost = fuel bought en route (`fuel_consumed_gallons` is also
   returned). Station positions are city-level, so mile markers/offsets are approximate.

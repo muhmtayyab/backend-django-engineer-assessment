@@ -3,6 +3,7 @@ import hashlib
 import math
 import re
 import threading
+from typing import NamedTuple
 
 import numpy as np
 import requests
@@ -86,9 +87,15 @@ def _nominatim(text):
 
 # ---------- routing ----------
 
-def fetch_route(a, b):
-    """Single OSRM call. Returns (coords as Nx2 [lng, lat] array, distance in miles)."""
-    key = f"route:{a[0]:.4f},{a[1]:.4f};{b[0]:.4f},{b[1]:.4f}"
+class Route(NamedTuple):
+    coords: np.ndarray  # Nx2 [lng, lat]
+    miles: float
+    hours: float
+
+
+def fetch_routes(a, b):
+    """Single OSRM call. Returns the best route plus any alternative OSRM offers (usually 1-2)."""
+    key = f"routes:{a[0]:.4f},{a[1]:.4f};{b[0]:.4f},{b[1]:.4f}"
     hit = cache.get(key)
     if hit:
         return hit
@@ -96,7 +103,7 @@ def fetch_route(a, b):
     data, error = None, None
     for _ in range(1 + settings.OSRM_RETRIES):
         try:
-            r = requests.get(url, params={"overview": "full", "geometries": "geojson"},
+            r = requests.get(url, params={"overview": "full", "geometries": "geojson", "alternatives": "true"},
                              timeout=settings.OSRM_TIMEOUT)
             if r.status_code >= 500:
                 raise requests.RequestException(f"HTTP {r.status_code}")
@@ -108,10 +115,13 @@ def fetch_route(a, b):
         raise PlanError(f"Routing service unavailable: {error}", 502)
     if data.get("code") != "Ok":
         raise PlanError(f"No drivable route found ({data.get('code')}).", 422)
-    route = data["routes"][0]
-    result = (np.asarray(route["geometry"]["coordinates"], dtype=float), route["distance"] / METERS_PER_MILE)
-    cache.set(key, result, 3600)
-    return result
+    routes = [
+        Route(np.asarray(r["geometry"]["coordinates"], dtype=float), r["distance"] / METERS_PER_MILE,
+              r["duration"] / 3600)
+        for r in data["routes"]
+    ]
+    cache.set(key, routes, 3600)
+    return routes
 
 
 # ---------- stations ----------

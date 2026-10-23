@@ -12,15 +12,11 @@ from . import services
 from .services import PlanError
 
 
-def build_plan(start_text, finish_text):
-    a, b = services.geocode(start_text), services.geocode(finish_text)
-    if services.haversine_miles(a, b) < services.MIN_TRIP_MILES:
-        raise PlanError("Start and finish are the same place.", 400)
-    coords, miles = services.fetch_route(a, b)
-    stops = services.stations_along(coords, miles)
-    plan = services.plan_fuel(stops, miles)
+def _plan_route(route):
+    """Fuel plan for one route: (fuel_stops, total_cost)."""
+    stops = services.stations_along(route.coords, route.miles)
+    plan = services.plan_fuel(stops, route.miles)
     mpg = settings.VEHICLE_MPG
-
     fuel_stops, total_cost = [], 0.0
     for p in plan:
         st, mile, offset = p["stop"]
@@ -36,22 +32,53 @@ def build_plan(start_text, finish_text):
             "gallons_purchased": round(gallons, 2),
             "cost": round(cost, 2),
         })
+    return fuel_stops, total_cost
+
+
+def build_plan(start_text, finish_text):
+    a, b = services.geocode(start_text), services.geocode(finish_text)
+    if services.haversine_miles(a, b) < services.MIN_TRIP_MILES:
+        raise PlanError("Start and finish are the same place.", 400)
+    routes = services.fetch_routes(a, b)  # the only routing call: best route + alternatives
+
+    options, plans, first_error = [], {}, None
+    for i, route in enumerate(routes):
+        option = {"distance_miles": round(route.miles, 1), "duration_hours": round(route.hours, 2)}
+        try:
+            plans[i] = _plan_route(route)
+            option.update(total_fuel_cost=round(plans[i][1], 2), fuel_stop_count=len(plans[i][0]))
+        except PlanError as e:
+            first_error = first_error or e
+            option["error"] = str(e)
+        options.append(option)
+    if not plans:
+        raise first_error
+
+    # Cheapest fuel wins; on equal cost prefer the shorter, then the faster route.
+    best = min(plans, key=lambda i: (round(plans[i][1], 2), routes[i].miles, routes[i].hours))
+    for i, option in enumerate(options):
+        option["selected"] = i == best
+    route, (fuel_stops, total_cost) = routes[best], plans[best]
+    mpg = settings.VEHICLE_MPG
     return {
         "start": {"query": start_text, "lat": a[0], "lng": a[1]},
         "finish": {"query": finish_text, "lat": b[0], "lng": b[1]},
-        "distance_miles": round(miles, 1),
-        "fuel_consumed_gallons": round(miles / mpg, 2),
+        "distance_miles": round(route.miles, 1),
+        "duration_hours": round(route.hours, 2),
+        "fuel_consumed_gallons": round(route.miles / mpg, 2),
         "assumptions": {
             "vehicle_range_miles": settings.VEHICLE_RANGE_MILES,
             "miles_per_gallon": mpg,
             "starts_with_full_tank": True,
             "note": "Cost covers fuel bought en route; the starting tank is not charged. "
-                    "Station coordinates are city-level approximations.",
+                    "Station coordinates are city-level approximations. When the routing service "
+                    "offers alternative routes, the one with the cheapest fuel plan is returned.",
         },
         "fuel_stops": fuel_stops,
         "total_fuel_cost": round(total_cost, 2),
+        "route_options": options,
         "route": {"type": "Feature", "properties": {}, "geometry": {
-            "type": "LineString", "coordinates": coords_list(coords)}},
+            "type": "LineString", "coordinates": coords_list(route.coords)}},
     }
 
 
