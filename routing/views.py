@@ -12,6 +12,8 @@ from .services import PlanError
 
 def build_plan(start_text, finish_text):
     a, b = services.geocode(start_text), services.geocode(finish_text)
+    if services.haversine_miles(a, b) < services.MIN_TRIP_MILES:
+        raise PlanError("Start and finish are the same place.", 400)
     coords, miles = services.fetch_route(a, b)
     stops = services.stations_along(coords, miles)
     plan = services.plan_fuel(stops, miles)

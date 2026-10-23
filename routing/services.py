@@ -1,5 +1,6 @@
 """Geocoding, routing (one OSRM call) and the fuel-stop planner."""
 import hashlib
+import math
 import re
 import threading
 
@@ -13,7 +14,24 @@ from .models import Station
 
 EARTH_MILES = 3958.8
 METERS_PER_MILE = 1609.344
-CONTIG_US = (24.0, 50.0, -125.0, -66.0)  # lat_min, lat_max, lng_min, lng_max
+# (lat_min, lat_max, lng_min, lng_max): contiguous US, Alaska, Hawaii, Puerto Rico
+US_BOXES = [
+    (24.0, 50.0, -125.0, -66.0),
+    (51.0, 72.0, -180.0, -129.0),
+    (18.5, 22.5, -161.0, -154.0),
+    (17.5, 18.7, -68.0, -65.0),
+]
+MIN_TRIP_MILES = 0.1
+
+
+def _in_us(lat, lng):
+    return any(a <= lat <= b and c <= lng <= d for a, b, c, d in US_BOXES)
+
+
+def haversine_miles(a, b):
+    lat1, lng1, lat2, lng2 = map(math.radians, (*a, *b))
+    h = math.sin((lat2 - lat1) / 2) ** 2 + math.cos(lat1) * math.cos(lat2) * math.sin((lng2 - lng1) / 2) ** 2
+    return 2 * EARTH_MILES * math.asin(math.sqrt(h))
 
 
 class PlanError(Exception):
@@ -39,8 +57,8 @@ def geocode(text):
                 lat, lng = pt
         if lat is None:
             lat, lng = _nominatim(text)
-    if not (CONTIG_US[0] <= lat <= CONTIG_US[1] and CONTIG_US[2] <= lng <= CONTIG_US[3]):
-        raise PlanError(f"Location '{text}' is not within the contiguous USA.")
+    if not _in_us(lat, lng):
+        raise PlanError(f"Location '{text}' is not within the USA.")
     return lat, lng
 
 
